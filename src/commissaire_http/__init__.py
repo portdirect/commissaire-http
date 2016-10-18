@@ -17,7 +17,7 @@
 Main Commissaire application server code.
 """
 
-import logging
+from oslo_log import log as logging
 
 from argparse import Namespace
 from socketserver import ThreadingMixIn

@@ -16,24 +16,28 @@
 """
 Commissaire HTTP based application server.
 """
+from oslo_config import cfg
 import argparse
 import importlib
-import logging
+from oslo_log import log as logging
 
 from commissaire_http.server.routing import DISPATCHER
 from commissaire_http import CommissaireHttpServer, parse_args
 
 
-# TODO: Make this configurable
-for name in (
-        'Dispatcher', 'Router', 'Bus', 'CommissaireHttpServer', 'Handlers'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        '%(name)s(%(levelname)s): %(message)s'))
-    logger.handlers.append(handler)
-# --
+CONF = cfg.CONF
+
+#
+# # TODO: Make this configurable
+# for name in (
+#         'Dispatcher', 'Router', 'Bus', 'CommissaireHttpServer', 'Handlers'):
+#     logger = logging.getLogger(name)
+#     logger.setLevel(logging.DEBUG)
+#     handler = logging.StreamHandler()
+#     handler.setFormatter(logging.Formatter(
+#         '%(name)s(%(levelname)s): %(message)s'))
+#     logger.handlers.append(handler)
+# # --
 
 
 def inject_authentication(plugin, kwargs):
@@ -71,28 +75,90 @@ def main():
     """
     Main entry point.
     """
-    epilog = 'Example: commissaire -c conf/myconfig.json'
-    parser = argparse.ArgumentParser(epilog=epilog)
-    args = parse_args(parser)
+    listen_group = cfg.OptGroup(name='listen',
+                                title='Listen options')
+    listen_opts = [
+        cfg.IPOpt('interface',
+                   default='0.0.0.0',
+                   help='Interface to listen on'),
+        cfg.PortOpt('port',
+                default=8000,
+                help='Port to listen on')
+    ]
+    CONF.register_group(listen_group)
+    CONF.register_cli_opts(listen_opts, group='listen')
+
+
+    tls_group = cfg.OptGroup(name='tls',
+                                title='TLS options')
+    tls_opts = [
+        cfg.StrOpt('pemfile',
+                help='Full path to the TLS PEM for the commissaire server'),
+        cfg.PortOpt('clientverifyfile',
+                help=('Full path to the TLS file containing the certificate '
+                     'authorities that client certificates should be verified against'))
+    ]
+    CONF.register_group(tls_group)
+    CONF.register_cli_opts(tls_opts, group='tls')
+
+
+    auth_group = cfg.OptGroup(name='authentication',
+                                title='Authentication options')
+    auth_opts = [
+        cfg.StrOpt('plugin',
+                default='commissaire_http.authentication.httpbasicauth',
+                metavar='MODULE_NAME',
+                help='Full path to the TLS PEM for the commissaire server'),
+        cfg.StrOpt('plugin-kwargs',
+                default='filepath=conf/users.json',
+                metavar='KEYWORD_ARGS',
+                help='Authentication Plugin configuration (key=value,...)')
+    ]
+    CONF.register_group(auth_group)
+    CONF.register_cli_opts(auth_opts, group='authentication')
+
+    bus_group = cfg.OptGroup(name='bus',
+                                title='Bus options')
+    bus_opts = [
+        cfg.StrOpt('exchange',
+                   default='commissaire',
+                   help='Bus Topic Name'),
+        cfg.URIOpt('uri',
+                default='redis://127.0.0.1:6379/',
+                help='Bus Connection URI')
+    ]
+
+    CONF.register_group(bus_group)
+    CONF.register_cli_opts(bus_opts, group='bus')
+
+    logging.register_options(cfg.CONF)
+    cfg.CONF(project='commissaire',
+             prog='commissaire-server',
+             version='dev')
+    logging.setup(cfg.CONF, 'commissaire-server')
+    logging.set_defaults()
+    logger = logging.getLogger(__name__)
+
+    if CONF.debug:
+        CONF.log_opt_values(logger, logging.DEBUG)
+
 
     try:
-        # Inject the authentication plugin
-        if args.authentication_plugin:
-            DISPATCHER = inject_authentication(
-                args.authentication_plugin, args.authentication_plugin_kwargs)
+        DISPATCHER = inject_authentication(
+                CONF.authentication.plugin, CONF.authentication.plugin_kwargs)
 
         # Create the server
         server = CommissaireHttpServer(
-            args.listen_interface,
-            args.listen_port,
+            CONF.listen.interface,
+            CONF.listen.port,
             DISPATCHER,
-            args.tls_pemfile,
-            args.tls_clientverifyfile)
+            CONF.tls.pemfile,
+            CONF.tls.clientverifyfile)
 
         # Set up our bus data
         server.setup_bus(
-            args.bus_exchange,
-            args.bus_uri,
+            CONF.bus.exchange,
+            CONF.bus.uri,
             [{'name': 'simple', 'routing_key': 'simple.*'}])
 
         # Serve until we are killed off
@@ -100,12 +166,12 @@ def main():
     except KeyboardInterrupt:  # pragma: no cover
         pass
     except ImportError:
-        parser.error('Could not import "{}" for authentication'.format(
+        logger.error('Could not import "{}" for authentication'.format(
             args.authentication_plugin))
     except Exception as error:  # pragma: no cover
         from traceback import print_exc
         print_exc()
-        parser.error('Exception shown above. Error: {}'.format(error))
+        logger.error('Exception shown above. Error: {}'.format(error))
 
 
 if __name__ == '__main__':  # pragma: no cover

@@ -2,3 +2,4 @@ kombu
 routes
 py-bcrypt
 git+https://github.com/projectatomic/commissaire.git
+python-keystoneclient
