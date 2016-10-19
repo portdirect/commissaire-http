@@ -110,7 +110,7 @@ def main():
                 metavar='MODULE_NAME',
                 help='Full path to the TLS PEM for the commissaire server'),
         cfg.StrOpt('plugin-kwargs',
-                default='filepath=conf/users.json',
+                default='filepath=/etc/commissaire/users.json',
                 metavar='KEYWORD_ARGS',
                 help='Authentication Plugin configuration (key=value,...)')
     ]
